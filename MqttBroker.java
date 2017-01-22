@@ -23,13 +23,14 @@ public class MqttBroker implements MqttCallback {
     private final MqttClient client;
     private final GpioBroker broker;
 
-    private static final String SERVER_URI = "tcp://192.168.178.28";
+    private static final String SERVER_URI = "tcp://localhost";
 
     public MqttBroker(String clientId, GpioBroker broker) throws MqttException {
         this.client = new MqttClient(SERVER_URI, clientId);
 
         client.setCallback(this);
         client.connect();
+        LOGGER.log(Level.INFO, "connected.");
         client.subscribe("#");
 
         this.broker = broker;
@@ -40,6 +41,7 @@ public class MqttBroker implements MqttCallback {
         LOGGER.log(Level.WARNING, "connection lost, reconnecting..");
         try {
             client.connect();
+            LOGGER.log(Level.INFO, "connected");
             client.subscribe("#");
         } catch (MqttException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());

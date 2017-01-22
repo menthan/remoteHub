@@ -18,6 +18,10 @@ public class RelayOutput {
 
     final String name;
 
+    private static final int ADDRESS_SETUP_TIME = 15;
+    private static final int PROPAGATION_DELAY = 21;
+    private static final int HOLD_TIME = 3;
+
     private final GpioPinDigitalOutput addressPinA;
     private final GpioPinDigitalOutput addressPinB;
     private final GpioPinDigitalOutput addressPinC;
@@ -39,27 +43,28 @@ public class RelayOutput {
         this.address = address;
     }
 
-    void enable() {
+    private void setAddress() {
         addressPinA.setState(address.A);
         addressPinB.setState(address.B);
         addressPinC.setState(address.C);
-        latchEnablePin.setState(PinState.LOW);
-    }
-
-    void disable() {
-        latchEnablePin.setState(PinState.HIGH);
     }
 
     void inhibit(Boolean data) {
-        enable();
+        setAddress();
         dataPin.setState(data);
-        // wait inhibition time
+        icWait(ADDRESS_SETUP_TIME);
+        //TODO low pulse
+//        latchEnablePin.pulse(PROPAGATION_DELAY, PinState.HIGH);
+        latchEnablePin.setState(PinState.LOW);
+        icWait(PROPAGATION_DELAY); // TODO maybe hold time is enough?
+        latchEnablePin.setState(PinState.HIGH);
+    }
+
+    private void icWait(final int waitTimeNs) {
         try {
-            Thread.sleep(
-                    5);
+            Thread.sleep(0, waitTimeNs);
         } catch (InterruptedException ex) {
             LOGGER.log(Level.SEVERE, null, ex);
         }
-        disable();
     }
 }
