@@ -9,11 +9,14 @@ import com.pi4j.io.gpio.GpioController;
 import com.pi4j.io.gpio.GpioFactory;
 import com.pi4j.io.gpio.GpioPinDigitalOutput;
 import com.pi4j.io.gpio.Pin;
+import com.pi4j.io.gpio.PinPullResistance;
 import com.pi4j.io.gpio.PinState;
 import static com.pi4j.io.gpio.RaspiPin.*;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import static remotehub.MessageHub.LOGGER;
 
@@ -29,6 +32,7 @@ public class GpioBroker {
     private final GpioPinDigitalOutput dataPin;
     private final List<GpioPinDigitalOutput> enablePins = new ArrayList<>();
 
+    private static Map<RelayOutput, Boolean> states = new HashMap<>();
     private final List<Integer> wiredAddresses = Arrays.asList(7, 6, 5, 4, 2, 1);
 
     private final List<Pin> enablePinList = Arrays.asList(
@@ -50,12 +54,12 @@ public class GpioBroker {
             "Heizraum/Licht", "Buero/Deckenlicht1", "Buero/Wandlicht", "Buero/Deckenlicht2",
             "Aussen/Buerolicht", "Aussen/Buerosteckdose", "Buero/Wandsteckdose/", "Speis/Licht",
             "Kueche/Licht1", "Kueche/Licht2", "Kueche/LichtLED", "Erker/Steckdose",
-            "Erker/Deckenlicht", "Erker/Wandlicht", "Erker/Durchgangslicht", "Wohnen/Steckdose",
-            "Wohnen/Deckenlicht", "Wohnen/Wandlicht", "Garage/Licht", "Aussen/Garagenlicht",
-            "Reserve/1", "WCEG/Licht", "WCEG/Spiegellicht", "Haupteingang/Licht",
-            "FlurEG/Licht", "TrphOG/Licht", "Bad/Duschlicht", "Bad/Licht",
-            "Bad/LichtLED", "Erker/Durchgangslicht2", "KindNord/Licht", "KindNord/Steckdose",
-            "KindSued/Licht", "KindSued/Steckdose", "Schlafen/Licht", "Schlafen/LichtBett",
+            "Erker/Wandlicht", "Erker/Deckenlicht", "Erker/Durchgangslicht", "Wohnen/Steckdose",
+            "Wohnen/Wandlicht", "Wohnen/Deckenlicht", "Garage/Licht", "Aussen/Garagenlicht",
+            "Kueche/Dunstabzug", "WCEG/Licht", "WCEG/Spiegellicht", "Haupteingang/Licht",
+            "FlurEG/Licht", "TrphOG/Licht", "Bad/LichtLED", "Bad/Licht",
+            "Bad/Duschlicht", "Bad/Spiegellicht", "KindNord/Licht", "KindNord/Steckdose",
+            "KindSued/Steckdose", "KindSued/Licht", "Schlafen/LichtBett", "Schlafen/Licht",
             "Schlafen/LichtAnkleide", "FlurOG/Licht", "Buehne/Licht", "Reserve/2",
             "Aussen/LichtTreppeUG", "Balkon/Steckdose", "Balkon/Licht", "Haupteingang/Steckdose",
             "Aussen/Weglicht", "Aussen/LichtWest", "Aussen/LichtWest2", "Reserve/Aussen",
@@ -72,9 +76,11 @@ public class GpioBroker {
         // assign data pin
         dataPin = gpio.provisionDigitalOutputPin(GPIO_26, PinState.LOW);
         // assign Enable Pins
+        enablePins.forEach(pin -> pin.setPullResistance(PinPullResistance.PULL_UP));
         enablePinList.forEach(pin -> enablePins.add(gpio.provisionDigitalOutputPin(pin, PinState.HIGH)));
 
         AssignRelayOutputs();
+        SetInitialStates();
     }
 
     private void AssignRelayOutputs() {
@@ -99,25 +105,36 @@ public class GpioBroker {
         return relayOutput;
     }
 
-    void set(String relay, Boolean data) {
+    synchronized void set(String relay, Boolean state) {
         relays.stream()
                 .filter(ro -> ro.name.equalsIgnoreCase(relay))
                 .findAny()
                 .ifPresent(ro -> {
-                    ro.inhibit(data);
-                    LOGGER.log(Level.INFO, "switching ".concat(ro.name + " " + data));
+                    ro.inhibit(state);
+                    LOGGER.log(Level.INFO, "switching ".concat(ro.name + " " + state));
+                    // store message to hash map
+                    states.put(ro, state);
                 });
 
         if ("test".equals(relay.toLowerCase())) {
-            test();
+            test(state);
         }
     }
 
-    private void test() {
+    void reapplySet() {
+        // execute all value set from hash set again
+        LOGGER.log(Level.WARNING, "ToDo: Fix the dirty reapplySet workaround!\n");
+        states.forEach((ro, state) -> {
+            ro.inhibit(state);
+            LOGGER.log(Level.WARNING, "Reapply " + ro.name + " " + state);
+        });
+    }
+
+    private void test(Boolean data) {
         for (int i = 0; i < relayNames.size(); i++) {
-            relays.get(i).inhibit(true);
+            relays.get(i).inhibit(data);
             LOGGER.log(Level.INFO,
-                    "switching ".concat(relays.get(i).name + " ON"));
+                    "switching ".concat(relays.get(i).name + " " + data));
             try {
                 Thread.sleep(200);
             } catch (InterruptedException ex) {
@@ -125,6 +142,10 @@ public class GpioBroker {
             }
             relays.get(i).inhibit(false);
         }
+    }
+
+    private void SetInitialStates() {
+        relays.forEach(relay -> states.put(relay, Boolean.FALSE));
     }
 
 }
