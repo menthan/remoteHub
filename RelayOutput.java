@@ -18,7 +18,7 @@ public class RelayOutput {
 
     final String name;
 
-    private static final int ADDRESS_SETUP_TIME = 15;
+    private static final int ADDRESS_SETUP_TIME = 35;//15 default
     private static final int PROPAGATION_DELAY = 21;
     private static final int HOLD_TIME = 3;
 
@@ -49,15 +49,35 @@ public class RelayOutput {
         addressPinC.setState(address.C);
     }
 
-    void inhibit(Boolean data) {
+    private void unSetAddress() {
+        addressPinA.setState(PinState.LOW);
+        addressPinB.setState(PinState.LOW);
+        addressPinC.setState(PinState.LOW);
+        dataPin.setState(PinState.LOW);
+    }
+
+    void setState(Boolean data) {
+        LOGGER.log(Level.INFO, "switching ".concat(name + " " + data));
         setAddress();
         dataPin.setState(data);
         icWait(ADDRESS_SETUP_TIME);
-        //TODO low pulse
-//        latchEnablePin.pulse(PROPAGATION_DELAY, PinState.HIGH);
+//        latchEnablePin.pulse(PROPAGATION_DELAY, PinState.LOW, true);
         latchEnablePin.setState(PinState.LOW);
         icWait(PROPAGATION_DELAY); // TODO maybe hold time is enough?
         latchEnablePin.setState(PinState.HIGH);
+        icWait(PROPAGATION_DELAY);
+        unSetAddress();
+        icWait(PROPAGATION_DELAY);// TODO maybe solve multiple fast triggering short flashing?
+    }
+
+    void pulse(Integer time_in_ms) {
+        LOGGER.log(Level.INFO, "pulsing ".concat(name));
+        setAddress();
+        icWait(ADDRESS_SETUP_TIME);
+        latchEnablePin.setState(PinState.LOW);
+        dataPin.pulse(time_in_ms, true);
+        latchEnablePin.setState(PinState.HIGH);
+        unSetAddress();
     }
 
     private void icWait(final int waitTimeNs) {
