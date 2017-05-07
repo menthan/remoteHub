@@ -76,7 +76,7 @@ public class GpioBroker {
             Integer latchAddress) {
         final RelayOutput relayOutput = new RelayOutput(name, enablePin, addressPinA, addressPinB,
                 addressPinC, dataPin, LatchAddress.getAddress(latchAddress));
-        System.out.println("relay " + name + " " + enablePin.getName() + " Adress:" + latchAddress);
+//        System.out.println("relay " + name + " " + enablePin.getName() + " Adress:" + latchAddress);
         return relayOutput;
     }
 

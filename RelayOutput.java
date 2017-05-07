@@ -57,7 +57,7 @@ public class RelayOutput {
     }
 
     void setState(Boolean data) {
-        LOGGER.log(Level.INFO, "switching ".concat(name + " " + data));
+        LOGGER.log(Level.FINE, "switching ".concat(name + " " + data));
         setAddress();
         dataPin.setState(data);
         icWait(ADDRESS_SETUP_TIME);
@@ -71,7 +71,7 @@ public class RelayOutput {
     }
 
     void pulse(Integer time_in_ms) {
-        LOGGER.log(Level.INFO, "pulsing ".concat(name));
+        LOGGER.log(Level.FINE, "pulsing ".concat(name));
         setAddress();
         icWait(ADDRESS_SETUP_TIME);
         latchEnablePin.setState(PinState.LOW);

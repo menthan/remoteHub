@@ -131,20 +131,26 @@ public class MessageHub implements MqttCallback {
             gpioBroker.set(output.concat("/AUF"), false);
         } else if (isSensorEvent(topic)) {
 //            mqttListener.publish(SENSORS.get(topic), message);
-            if ("PRESSED".equalsIgnoreCase(message)) {
+            if (isButtonPress(message)) {
                 if (output.contains("Tor")) {
                     // garage door pressed
                     gpioBroker.pulse(output, GARAGE_DOOR_PULSE);
                 } else {
                     gpioBroker.toggle(output);
                 }
-            } else // this is the remnant of a pir event
-             if (!(dayTime() && output.toLowerCase().contains("licht"))) {
-                    gpioBroker.set(output, "1".equals(message));
+            } else // message low or high
+            {
+                if (!(dayTime() && output.toLowerCase().contains("licht"))) {
+                    gpioBroker.set(output, "high".equals(message));
                 }
+            }
         } else {
 //            LOGGER.log(Level.INFO, "Unrecognized message: ".concat(output.concat(message)));
         }
+    }
+
+    private static boolean isButtonPress(final String message) {
+        return message.toLowerCase().startsWith("press") || message.toLowerCase().startsWith("pulse");
     }
 
     private static boolean isSensorEvent(final String topic) {
@@ -160,8 +166,8 @@ public class MessageHub implements MqttCallback {
     }
 
     private boolean dayTime() {
-        final LocalTime DAWN = LocalTime.of(10, 0);
-        final LocalTime DUSK = LocalTime.of(17, 0);
+        final LocalTime DAWN = LocalTime.of(9, 0);
+        final LocalTime DUSK = LocalTime.of(19, 0);
         final LocalTime now = LocalTime.now();
         return now.isAfter(DAWN) && now.isBefore(DUSK);
     }
