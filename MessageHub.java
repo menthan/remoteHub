@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2017 Frederic Lott
  *
  * This program is free software: you can redistribute it and/or modify
@@ -17,7 +17,6 @@
 package remotehub;
 
 import java.io.IOException;
-import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -44,6 +43,8 @@ public class MessageHub implements MqttCallback {
     private final GpioBroker gpioBroker;
     private final MQTTBroker mqttListener;
 
+    private final SunRiseSet sun;
+
     // dirty workaround!
     private static int reapplyCounter = 0;
     private static final int REAPPLY_TIMEOUT = 30;
@@ -51,6 +52,7 @@ public class MessageHub implements MqttCallback {
     private static final Map<String, String> SENSORS = new HashMap<>();
 
     public static void main(String[] args) {
+
         // Testing purposes
         EVENTS.put("1401678/REED", "GarageUG/Licht");
 
@@ -61,11 +63,11 @@ public class MessageHub implements MqttCallback {
 
             MessageHub messageHub = new MessageHub();
 
-            while (true) {
-                tryReaplly(messageHub);
-                Thread.sleep(60000);
-            }
-        } catch (MqttException | InterruptedException | IOException | SecurityException ex) {
+//            while (true) {
+//                tryReaplly(messageHub);
+//                Thread.sleep(60000);
+//            }
+        } catch (MqttException | IOException | SecurityException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
     }
@@ -102,6 +104,8 @@ public class MessageHub implements MqttCallback {
     }
 
     public MessageHub() throws MqttException, IOException {
+        this.sun = new SunRiseSet(48.282622, 9.899724, 2);
+
         //load properties
         relayProperties.load(MessageHub.class.getClassLoader().getResourceAsStream("relays.properties"));
         sensorProperties.load(MessageHub.class.getClassLoader().getResourceAsStream("sensors.properties"));
@@ -151,7 +155,7 @@ public class MessageHub implements MqttCallback {
                 }
             } else // message low or high
             {
-                if (!(dayTime() && output.toLowerCase().contains("licht"))) {
+                if (!(sun.dayTime() && output.toLowerCase().contains("licht"))) {
                     gpioBroker.set(output, "high".equals(message));
                 }
             }
@@ -174,13 +178,6 @@ public class MessageHub implements MqttCallback {
         if (topic.endsWith(currentDirection)) {
             gpioBroker.set(topic.replace(currentDirection, oppositeDirection), false);
         }
-    }
-
-    private boolean dayTime() {
-        final LocalTime DAWN = LocalTime.of(9, 0);
-        final LocalTime DUSK = LocalTime.of(19, 0);
-        final LocalTime now = LocalTime.now();
-        return now.isAfter(DAWN) && now.isBefore(DUSK);
     }
 
     @Override
