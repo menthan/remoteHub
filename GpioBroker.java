@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 2017 Frederic Lott
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Timer;
 import java.util.logging.Level;
 import static remotehub.MessageHub.LOGGER;
 
@@ -44,12 +45,13 @@ public class GpioBroker {
     private final GpioPinDigitalOutput dataPin;
     private final List<GpioPinDigitalOutput> enablePins = new ArrayList<>();
 
-    private static final Map<RelayOutput, Boolean> states = new HashMap<>();
+    private static final Map<RelayOutput, Boolean> STATES = new HashMap<>();
     private final List<Integer> wiredAddresses = Arrays.asList(7, 6, 5, 4, 2, 1);
     final int relaisPerEnable = wiredAddresses.size();
 
     private final List<Pin> enablePinList = Arrays.asList(
-            GPIO_01, GPIO_08, GPIO_09, GPIO_07, GPIO_00, GPIO_02, GPIO_03, GPIO_12, GPIO_13,
+            GPIO_16, // Testwise changed pin connection from GPIO_01
+            GPIO_08, GPIO_09, GPIO_07, GPIO_00, GPIO_02, GPIO_03, GPIO_12, GPIO_13,
             GPIO_14, GPIO_21, GPIO_22, GPIO_23, GPIO_24, GPIO_25);
 
     private final List<RelayOutput> relays = new ArrayList<>();
@@ -68,11 +70,11 @@ public class GpioBroker {
         // assign Enable Pins
         enablePinList.forEach(pin -> enablePins.add(gpio.provisionDigitalOutputPin(pin, PinState.HIGH)));
 
-        relayProperties.forEach((key, value) -> AssignRelayOutput(value.toString().trim(), Integer.parseInt(key.toString())));
-        SetInitialStates();
+        relayProperties.forEach((key, value) -> assignRelayOutput(value.toString().trim(), Integer.parseInt(key.toString())));
+        setInitialStates();
     }
 
-    private void AssignRelayOutput(String relayName, Integer order) {
+    private void assignRelayOutput(String relayName, Integer order) {
         int wiredAddressNo = order % relaisPerEnable;
         if (order % 30 >= 12) { // reverse order for lower banks
             wiredAddressNo = relaisPerEnable - 1 - wiredAddressNo;
@@ -85,83 +87,56 @@ public class GpioBroker {
     private RelayOutput createRelayOutput(String name,
             GpioPinDigitalOutput enablePin,
             Integer latchAddress) {
-        final RelayOutput relayOutput = new RelayOutput(name, enablePin, addressPinA, addressPinB,
+        return new RelayOutput(name, enablePin, addressPinA, addressPinB,
                 addressPinC, dataPin, LatchAddress.getAddress(latchAddress));
-//        System.out.println("relay " + name + " " + enablePin.getName() + " Adress:" + latchAddress);
-        return relayOutput;
     }
 
     synchronized void set(String relay, Boolean state) {
-        relays.stream()
-                .filter(ro -> ro.name.equalsIgnoreCase(relay))
-                .findAny()
+        getRelay(relay)
                 .ifPresent(ro -> {
                     ro.setState(state);
                     // store message to hash map
-                    states.put(ro, state);
+                    STATES.put(ro, state);
                 });
 
-        if ("test".equals(relay.toLowerCase())) {
-            test(state);
+        if ("test".equalsIgnoreCase(relay)) {
+            test();
         }
     }
 
-    synchronized void pulse(String relay, Integer time_in_ms) {
-        relays.stream()
+    void pulse(String relay, Integer timeInMs) {
+        new Timer().schedule(new PulseTask(this, relay), timeInMs);
+    }
+
+    private Optional<RelayOutput> getRelay(String relay) {
+        return relays.stream()
                 .filter(ro -> ro.name.equalsIgnoreCase(relay))
-                .findAny()
-                .ifPresent(ro -> ro.pulse(time_in_ms));
+                .findAny();
     }
 
-    synchronized Boolean toggle(String relay) {
-//        relays.stream()
-//                .filter(ro -> ro.name.equalsIgnoreCase(relay))
-//                .findAny()
-//                .ifPresent(ro -> {
-//                    final boolean newState = !states.get(ro);
-//                    ro.setState(newState);
-//                    LOGGER.log(Level.INFO, "switching ".concat(ro.name + " " + newState));
-//                    // store message to hash map
-//                    states.put(ro, newState);
-//                });
-        Boolean newState = false;
-        final Optional<RelayOutput> relayOutput = relays.stream().filter(ro -> ro.name.equalsIgnoreCase(relay)).findAny();
-        if (relayOutput.isPresent()) {
-            final RelayOutput actualRelay = relayOutput.get();
-            newState = !states.get(actualRelay);
-            actualRelay.setState(newState);
-            LOGGER.log(Level.INFO, "switching ".concat(actualRelay.name + " " + newState));
-            // store message to hash map
-            states.put(actualRelay, newState);
-        }
-
-        return newState;
+    synchronized void toggle(String relay) {
+        getRelay(relay)
+                .ifPresent(ro -> {
+                    final boolean newState = !STATES.get(ro);
+                    ro.setState(newState);
+                    STATES.put(ro, newState);
+                });
     }
 
     void reapplySet() {
         // execute all value set from hash set again
         LOGGER.log(Level.WARNING, "ToDo: Fix the dirty reapplySet workaround!\n");
-        states.forEach((ro, state) -> {
+        STATES.forEach((ro, state) -> {
             ro.setState(state);
-            LOGGER.log(Level.WARNING, "Reapply " + ro.name + " " + state);
+            LOGGER.log(Level.INFO, "Reapply " + ro.name + " " + state);
         });
     }
 
-    private void test(Boolean data) {
-        for (int i = 0; i < relays.size(); i++) {
-            relays.get(i).setState(data);
-            LOGGER.log(Level.INFO,
-                    "switching ".concat(relays.get(i).name + " " + data));
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException ex) {
-                LOGGER.log(Level.SEVERE, null, ex);
-            }
-            relays.get(i).setState(false);
-        }
+    private void test() {
+        reapplySet();
     }
 
-    private void SetInitialStates() {
-        relays.forEach(relay -> states.put(relay, Boolean.FALSE));
+    private void setInitialStates() {
+        relays.forEach(relay -> STATES.put(relay, Boolean.FALSE));
     }
 }

@@ -1,5 +1,5 @@
-/* 
- * Copyright (C) 2017 Frederic Lott
+/*
+ * Copyright (c) 2017 Frederic Lott
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -8,7 +8,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR a PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -55,9 +55,9 @@ public class RelayOutput {
     }
 
     private void setAddress() {
-        addressPinA.setState(address.A);
-        addressPinB.setState(address.B);
-        addressPinC.setState(address.C);
+        addressPinA.setState(address.a);
+        addressPinB.setState(address.b);
+        addressPinC.setState(address.c);
     }
 
     private void unSetAddress() {
@@ -72,7 +72,6 @@ public class RelayOutput {
         setAddress();
         dataPin.setState(data);
         icWait(ADDRESS_SETUP_TIME);
-//        latchEnablePin.pulse(PROPAGATION_DELAY, PinState.LOW, true);
         latchEnablePin.setState(PinState.LOW);
         icWait(PROPAGATION_DELAY); // TODO maybe hold time is enough?
         latchEnablePin.setState(PinState.HIGH);
@@ -81,12 +80,12 @@ public class RelayOutput {
         icWait(PROPAGATION_DELAY);// TODO maybe solve multiple fast triggering short flashing?
     }
 
-    void pulse(Integer time_in_ms) {
+    void pulse(Integer timeInMs) {
         LOGGER.log(Level.FINE, "pulsing ".concat(name));
         setAddress();
         icWait(ADDRESS_SETUP_TIME);
         latchEnablePin.setState(PinState.LOW);
-        dataPin.pulse(time_in_ms, true);
+        dataPin.pulse(timeInMs, true);
         latchEnablePin.setState(PinState.HIGH);
         unSetAddress();
     }
@@ -96,6 +95,7 @@ public class RelayOutput {
             Thread.sleep(0, waitTimeNs);
         } catch (InterruptedException ex) {
             LOGGER.log(Level.SEVERE, null, ex);
+            Thread.currentThread().interrupt();
         }
     }
 }

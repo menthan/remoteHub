@@ -17,8 +17,8 @@
 package remotehub;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Properties;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
@@ -40,33 +40,22 @@ public class MessageHub implements MqttCallback {
     final Properties relayProperties = new Properties();
     final Properties sensorProperties = new Properties();
 
+    private final EventMapper eventMapper;
     private final GpioBroker gpioBroker;
-    private final MQTTBroker mqttListener;
+    private final MQTTBroker mqttBroker;
 
     private final SunRiseSet sun;
 
-    // dirty workaround!
-    private static int reapplyCounter = 0;
-    private static final int REAPPLY_TIMEOUT = 30;
-    private static final Map<String, String> EVENTS = new HashMap<>();
-    private static final Map<String, String> SENSORS = new HashMap<>();
+    private static final int GARAGE_DOOR_PULSE = 200;
 
     public static void main(String[] args) {
 
-        // Testing purposes
-        EVENTS.put("1401678/REED", "GarageUG/Licht");
-
         try {
             addFileLogger();
-            LOGGER.log(Level.INFO, "Remote Hub V 0.2");
-//            LOGGER.setLevel(Level.WARNING);
+            LOGGER.log(Level.INFO, "Remote Hub V 0.3");
+            LOGGER.setLevel(Level.FINEST);
 
-            MessageHub messageHub = new MessageHub();
-
-//            while (true) {
-//                tryReaplly(messageHub);
-//                Thread.sleep(60000);
-//            }
+            new MessageHub();
         } catch (MqttException | IOException | SecurityException ex) {
             LOGGER.log(Level.SEVERE, ex.getMessage());
         }
@@ -81,28 +70,6 @@ public class MessageHub implements MqttCallback {
         fh.setFormatter(formatter);
     }
 
-    private static void tryReaplly(MessageHub messageHub) {
-        reapplyCounter = (reapplyCounter + 1) % REAPPLY_TIMEOUT;
-        if (reapplyCounter == 0) {
-            messageHub.gpioBroker.reapplySet();
-        }
-    }
-
-    private static void assignSensors(String key, String value) {
-        final String[] keys = key.split("/");
-        if (keys.length == 1) {
-            SENSORS.put(key, value);
-        }
-    }
-
-    private static void assignEvents(String key, String value) {
-        final String[] keys = key.split("/");
-        final String sensorName = SENSORS.get(keys[0]);
-        if ((keys.length == 2) && (sensorName != null)) {
-            EVENTS.put(sensorName + "/" + keys[1], value);
-        }
-    }
-
     public MessageHub() throws MqttException, IOException {
         this.sun = new SunRiseSet(48.282622, 9.899724, 2);
 
@@ -110,78 +77,123 @@ public class MessageHub implements MqttCallback {
         relayProperties.load(MessageHub.class.getClassLoader().getResourceAsStream("relays.properties"));
         sensorProperties.load(MessageHub.class.getClassLoader().getResourceAsStream("sensors.properties"));
 
-        sensorProperties.forEach((k, v) -> assignSensors(k.toString(), v.toString()));
-        sensorProperties.forEach((k, v) -> assignEvents(k.toString(), v.toString()));
-
+        eventMapper = new EventMapper(sensorProperties);
         gpioBroker = new GpioBroker(relayProperties);
-        mqttListener = new MQTTBroker(this.getClass().getName(), this);
+        mqttBroker = new MQTTBroker(this.getClass().getName(), this);
+
+        while (true) {
+            final LocalTime now = LocalTime.now(ZoneId.of("Europe/Berlin"));
+            if (now.getHour() == 6 && now.getMinute() == 15) {
+                moveBlinds(true);
+            }
+            try {
+                Thread.sleep(60000);
+            } catch (InterruptedException ex) {
+                Logger.getLogger(MessageHub.class.getName()).log(Level.SEVERE, null, ex);
+                break;
+            }
+        }
+
+    }
+
+    private void moveBlinds(Boolean dayTime) {
+        //open/close all blinds
+        String direction = dayTime ? "Up" : "Down";
+        relayProperties.forEach((key, value) -> {
+            final String relais = value.toString().toLowerCase()
+                    .replace("/auf", "").replace("/ab", "");
+            if (relais.contains("/ro/")) {
+                final SwitchAction switchAction = new SwitchAction(relais, direction);
+                execute(switchAction);
+            }
+        }
+        );
     }
 
     @Override
     public void connectionLost(Throwable thrwbl) {
-        LOGGER.log(Level.WARNING, "connection lost");
+        LOGGER.log(Level.WARNING, "connection lost: " + thrwbl.getCause());
     }
 
     @Override
     public void messageArrived(String topic, MqttMessage mm) throws Exception {
-        final String message = mm.toString();
-        final String output = isSensorEvent(topic) ? EVENTS.get(topic) : topic;
+        LOGGER.log(Level.INFO, "Received message: ".concat(topic.concat(mm.toString())));
+        final SwitchAction action = eventMapper.map(topic, mm.toString());
+        if (eventMapper.isSensorEvent(topic) && !mm.isRetained()) {
+            // TODO publish new topic state for sensor events:
+            mqttBroker.publish(action.getOutput(), action.getCommand());
+        }
+        execute(action);
+    }
 
-        // SAFETY: If rollershutter is actuated directly, deactivate other direction first.
-        deactivateShutter(output, "/AB", "/AUF");
-        deactivateShutter(output, "/AUF", "/AB");
+    private static final Integer JALOUSIE_TIME = 60000;
 
-        if ("ON".equalsIgnoreCase(message) || "true".equalsIgnoreCase(message)) {
-            gpioBroker.set(output, true);
-        } else if ("OFF".equalsIgnoreCase(message) || "false".equalsIgnoreCase(message)) {
-            gpioBroker.set(output, false);
-        } else if ("UP".equalsIgnoreCase(message)) {
-            gpioBroker.set(output.concat("/AB"), false);
-            gpioBroker.pulse(output.concat("/AUF"), GARAGE_DOOR_PULSE);
-        } else if ("DOWN".equalsIgnoreCase(message)) {
-            gpioBroker.set(output.concat("/AUF"), false);
-            gpioBroker.pulse(output.concat("/AB"), GARAGE_DOOR_PULSE);
-        } else if ("STOP".equalsIgnoreCase(message)) {
-            gpioBroker.set(output.concat("/AB"), false);
-            gpioBroker.set(output.concat("/AUF"), false);
-        } else if (isSensorEvent(topic)) {
-//            mqttListener.publish(SENSORS.get(topic), message);
-            if (isButtonPress(message)) {
-                if (output.contains("Tor")) {
-                    // garage door pressed
-                    gpioBroker.pulse(output, GARAGE_DOOR_PULSE);
-                } else {
-                    gpioBroker.toggle(output);
-                }
-            } else // message low or high
-            {
-                if (!(sun.dayTime() && output.toLowerCase().contains("licht"))) {
-                    gpioBroker.set(output, "high".equals(message));
-                }
+    private void execute(SwitchAction action) {
+        final String output = action.getOutput();
+        final String command = action.getCommand();
+        final boolean garageDoor = isGarageDoor(output);
+        //LOGGER.log(Level.INFO, "Mapped to message: ".concat(output.concat(command)));
+
+        if (isRollerShutter(output) || garageDoor) {
+            final Integer pulseTime;
+            if (garageDoor) {
+                pulseTime = GARAGE_DOOR_PULSE;
+            } else {
+                pulseTime = JALOUSIE_TIME;
             }
+
+            if ("up".equalsIgnoreCase(command)) {
+                gpioBroker.set(output.concat("/ab"), false);
+                gpioBroker.pulse(output.concat("/auf"), pulseTime);
+            } else if ("down".equalsIgnoreCase(command)) {
+                gpioBroker.set(output.concat("/auf"), false);
+                gpioBroker.pulse(output.concat("/ab"), pulseTime);
+            } else {
+                gpioBroker.set(output.concat("/ab"), false);
+                gpioBroker.set(output.concat("/auf"), false);
+            }
+        } else if (isBinary(output)) {
+            if ("on".equalsIgnoreCase(command) || "true".equalsIgnoreCase(command)) {
+                gpioBroker.set(output, true);
+            } else if ("off".equalsIgnoreCase(command) || "false".equalsIgnoreCase(command)) {
+                gpioBroker.set(output, false);
+            } else if (isButtonPress(command)) {
+                gpioBroker.toggle(output);
+            } else // command is "low" or "high"
+             if (output.contains("licht")) {
+                    gpioBroker.set(output, !sun.dayTime() && "high".equals(command));
+                } else {
+                    gpioBroker.set(output, "high".equals(command));
+                }
         } else {
-//            LOGGER.log(Level.INFO, "Unrecognized message: ".concat(output.concat(message)));
+            LOGGER.log(Level.FINEST, "Unassigned message: ".concat(output.concat(command)));
         }
-    }
 
-    private static boolean isButtonPress(final String message) {
-        return message.toLowerCase().startsWith("press") || message.toLowerCase().startsWith("pulse");
-    }
-
-    private static boolean isSensorEvent(final String topic) {
-        return EVENTS.containsKey(topic);
-    }
-    private static final int GARAGE_DOOR_PULSE = 200;
-
-    private void deactivateShutter(final String topic,
-            final String currentDirection, final String oppositeDirection) {
-        if (topic.endsWith(currentDirection)) {
-            gpioBroker.set(topic.replace(currentDirection, oppositeDirection), false);
-        }
     }
 
     @Override
     public void deliveryComplete(IMqttDeliveryToken imdt) {
-        throw new UnsupportedOperationException("Not supported yet.");
+        try {
+            LOGGER.log(Level.FINEST, "Delivered message: ".concat(imdt.getMessage().toString()));
+        } catch (MqttException ex) {
+            LOGGER.log(Level.SEVERE, null, ex);
+        }
     }
+
+    private static boolean isGarageDoor(final String output) {
+        return output.contains("garage/tor");
+    }
+
+    private static boolean isRollerShutter(final String output) {
+        return output.contains("/ro/") || output.contains("/ja/");
+    }
+
+    private static boolean isBinary(final String output) {
+        return output.contains("licht") || output.contains("steckdose") || output.contains("abzug");
+    }
+
+    private static boolean isButtonPress(final String command) {
+        return command.toLowerCase().startsWith("press") || command.toLowerCase().startsWith("pulse");
+    }
+
 }

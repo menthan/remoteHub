@@ -1,5 +1,5 @@
-/* 
- * Copyright (C) 2017 Frederic Lott
+/*
+ * Copyright (c) 2017 Frederic Lott
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -8,7 +8,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR a PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -22,14 +22,14 @@ package remotehub;
  */
 public class LatchAddress {
 
-    public final Boolean A;
-    public final Boolean B;
-    public final Boolean C;
+    public final Boolean a;
+    public final Boolean b;
+    public final Boolean c;
 
-    public LatchAddress(Boolean A, Boolean B, Boolean C) {
-        this.A = A;
-        this.B = B;
-        this.C = C;
+    public LatchAddress(Boolean a, Boolean b, Boolean c) {
+        this.a = a;
+        this.b = b;
+        this.c = c;
     }
 
     public static LatchAddress getAddress(Integer address) {
