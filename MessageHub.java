@@ -46,7 +46,8 @@ public class MessageHub implements MqttCallback {
 
     private final SunRiseSet sun;
 
-    private static final int GARAGE_DOOR_PULSE = 200;
+    private static final Integer GARAGE_DOOR_PULSE = 200;
+    private static final Integer JALOUSIE_TIME = 60000;
 
     public static void main(String[] args) {
 
@@ -61,13 +62,17 @@ public class MessageHub implements MqttCallback {
         }
     }
 
-    private static void addFileLogger() throws IOException, SecurityException {
+    private static void addFileLogger() {
         FileHandler fh;
-
-        fh = new FileHandler("/var/log/remoteHub/remoteHub.log");
-        LOGGER.addHandler(fh);
         SimpleFormatter formatter = new SimpleFormatter();
-        fh.setFormatter(formatter);
+
+        try {
+            fh = new FileHandler("/var/log/remoteHub/remoteHub.log");
+            LOGGER.addHandler(fh);
+            fh.setFormatter(formatter);
+        } catch (IOException | SecurityException ex) {
+            LOGGER.log(Level.SEVERE, "could not open log file: {0}", ex.toString());
+        }
     }
 
     public MessageHub() throws MqttException, IOException {
@@ -112,7 +117,7 @@ public class MessageHub implements MqttCallback {
 
     @Override
     public void connectionLost(Throwable thrwbl) {
-        LOGGER.log(Level.WARNING, "connection lost: " + thrwbl.getCause());
+        LOGGER.log(Level.WARNING, "connection lost: ".concat(thrwbl.getCause().toString()));
     }
 
     @Override
@@ -126,32 +131,24 @@ public class MessageHub implements MqttCallback {
         execute(action);
     }
 
-    private static final Integer JALOUSIE_TIME = 60000;
-
     private void execute(SwitchAction action) {
         final String output = action.getOutput();
         final String command = action.getCommand();
-        final boolean garageDoor = isGarageDoor(output);
-        //LOGGER.log(Level.INFO, "Mapped to message: ".concat(output.concat(command)));
+//        LOGGER.log(Level.INFO, "Mapped to message: ".concat(output.concat(command)));
 
-        if (isRollerShutter(output) || garageDoor) {
-            final Integer pulseTime;
-            if (garageDoor) {
-                pulseTime = GARAGE_DOOR_PULSE;
-            } else {
-                pulseTime = JALOUSIE_TIME;
-            }
-
+        if (isRollerShutter(output) || isGarageDoor(output)) {
             if ("up".equalsIgnoreCase(command)) {
                 gpioBroker.set(output.concat("/ab"), false);
-                gpioBroker.pulse(output.concat("/auf"), pulseTime);
+                gpioBroker.pulse(output.concat("/auf"), getPulseTime(output));
             } else if ("down".equalsIgnoreCase(command)) {
                 gpioBroker.set(output.concat("/auf"), false);
-                gpioBroker.pulse(output.concat("/ab"), pulseTime);
+                gpioBroker.pulse(output.concat("/ab"), getPulseTime(output));
             } else {
                 gpioBroker.set(output.concat("/ab"), false);
                 gpioBroker.set(output.concat("/auf"), false);
             }
+        } else if (command.equalsIgnoreCase("FLUR_EG/D1")) {
+            gpioBroker.pulse("WCEG/Licht", 180000);
         } else if (isBinary(output)) {
             if ("on".equalsIgnoreCase(command) || "true".equalsIgnoreCase(command)) {
                 gpioBroker.set(output, true);
@@ -160,15 +157,23 @@ public class MessageHub implements MqttCallback {
             } else if (isButtonPress(command)) {
                 gpioBroker.toggle(output);
             } else // command is "low" or "high"
-             if (output.contains("licht")) {
+            {
+                if (output.contains("licht")) {
                     gpioBroker.set(output, !sun.dayTime() && "high".equals(command));
                 } else {
                     gpioBroker.set(output, "high".equals(command));
                 }
+            }
         } else {
             LOGGER.log(Level.FINEST, "Unassigned message: ".concat(output.concat(command)));
         }
+    }
 
+    private Integer getPulseTime(final String output) {
+        if (isGarageDoor(output)) {
+            return GARAGE_DOOR_PULSE;
+        }
+        return JALOUSIE_TIME;
     }
 
     @Override
@@ -193,7 +198,7 @@ public class MessageHub implements MqttCallback {
     }
 
     private static boolean isButtonPress(final String command) {
-        return command.toLowerCase().startsWith("press") || command.toLowerCase().startsWith("pulse");
+        return command.startsWith("press") || command.startsWith("pulse");
     }
 
 }

@@ -40,6 +40,7 @@ public class RelayOutput {
     private final GpioPinDigitalOutput latchEnablePin;
 
     private final LatchAddress address;
+    private Boolean state = false;
 
     public RelayOutput(String name,
             GpioPinDigitalOutput latchEnablePin, GpioPinDigitalOutput addressPinA,
@@ -78,16 +79,11 @@ public class RelayOutput {
         icWait(PROPAGATION_DELAY);
         unSetAddress();
         icWait(PROPAGATION_DELAY);// TODO maybe solve multiple fast triggering short flashing?
+        state = data;
     }
 
-    void pulse(Integer timeInMs) {
-        LOGGER.log(Level.FINE, "pulsing ".concat(name));
-        setAddress();
-        icWait(ADDRESS_SETUP_TIME);
-        latchEnablePin.setState(PinState.LOW);
-        dataPin.pulse(timeInMs, true);
-        latchEnablePin.setState(PinState.HIGH);
-        unSetAddress();
+    Boolean getState() {
+        return state;
     }
 
     private void icWait(final int waitTimeNs) {

@@ -55,6 +55,7 @@ public class GpioBroker {
             GPIO_14, GPIO_21, GPIO_22, GPIO_23, GPIO_24, GPIO_25);
 
     private final List<RelayOutput> relays = new ArrayList<>();
+    private final HashMap<String, Timer> relayTimers = new HashMap<>();
 
     private final GpioController gpio;
 
@@ -70,8 +71,7 @@ public class GpioBroker {
         // assign Enable Pins
         enablePinList.forEach(pin -> enablePins.add(gpio.provisionDigitalOutputPin(pin, PinState.HIGH)));
 
-        relayProperties.forEach((key, value) -> assignRelayOutput(value.toString().trim(), Integer.parseInt(key.toString())));
-        setInitialStates();
+        relayProperties.forEach((key, value) -> assignRelayOutput(value.toString().trim().toLowerCase(), Integer.parseInt(key.toString())));
     }
 
     private void assignRelayOutput(String relayName, Integer order) {
@@ -82,6 +82,7 @@ public class GpioBroker {
         relays.add(createRelayOutput(relayName,
                 enablePins.get(order / relaisPerEnable),
                 wiredAddresses.get(wiredAddressNo)));
+        relayTimers.put(relayName, new Timer());
     }
 
     private RelayOutput createRelayOutput(String name,
@@ -92,51 +93,41 @@ public class GpioBroker {
     }
 
     synchronized void set(String relay, Boolean state) {
-        getRelay(relay)
-                .ifPresent(ro -> {
-                    ro.setState(state);
-                    // store message to hash map
-                    STATES.put(ro, state);
-                });
+        getRelay(relay).ifPresent(ro -> ro.setState(state));
 
         if ("test".equalsIgnoreCase(relay)) {
-            test();
+            reapplySet();
+        }
+        if ("alle Lichter".equalsIgnoreCase(relay)) {
+            relays.stream()
+                    .filter(r -> r.name.contains("icht"))
+                    .forEach(r -> r.setState(state));
         }
     }
 
+    // TODO test if new pulse works with multiple timers active at once!
     void pulse(String relay, Integer timeInMs) {
-        new Timer().schedule(new PulseTask(this, relay), timeInMs);
+        getRelay(relay)
+                .ifPresent(ro -> {
+                    ro.setState(Boolean.TRUE);
+                    // get timer from relay
+                    relayTimers.get(relay).schedule(new SwitchTask(this, relay), timeInMs);
+                });
     }
 
     private Optional<RelayOutput> getRelay(String relay) {
-        return relays.stream()
+        return relays.parallelStream()
                 .filter(ro -> ro.name.equalsIgnoreCase(relay))
                 .findAny();
     }
 
     synchronized void toggle(String relay) {
-        getRelay(relay)
-                .ifPresent(ro -> {
-                    final boolean newState = !STATES.get(ro);
-                    ro.setState(newState);
-                    STATES.put(ro, newState);
-                });
+        getRelay(relay).ifPresent(ro -> ro.setState(!ro.getState()));
     }
 
     void reapplySet() {
         // execute all value set from hash set again
         LOGGER.log(Level.WARNING, "ToDo: Fix the dirty reapplySet workaround!\n");
-        STATES.forEach((ro, state) -> {
-            ro.setState(state);
-            LOGGER.log(Level.INFO, "Reapply " + ro.name + " " + state);
-        });
-    }
-
-    private void test() {
-        reapplySet();
-    }
-
-    private void setInitialStates() {
-        relays.forEach(relay -> STATES.put(relay, Boolean.FALSE));
+        relays.stream().forEach(ro -> ro.setState(ro.getState()));
     }
 }

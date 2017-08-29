@@ -38,7 +38,6 @@ public class EventMapper {
         if (isSensorEvent(topic)) {
             return new SwitchAction(determineOutput(topic), determineCommand(topic, message));
         }
-
         return new SwitchAction(topic.toLowerCase(), message.toLowerCase());
     }
 

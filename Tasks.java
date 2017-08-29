@@ -26,15 +26,14 @@ public class Tasks {
 
 }
 
-class PulseTask extends TimerTask {
+class SwitchTask extends TimerTask {
 
     private final String relay;
     private final GpioBroker broker;
 
-    public PulseTask(GpioBroker broker, String relay) {
+    public SwitchTask(GpioBroker broker, String relay) {
         this.relay = relay;
         this.broker = broker;
-        broker.set(relay, Boolean.TRUE);
     }
 
     @Override
