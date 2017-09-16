@@ -34,6 +34,7 @@ public class MQTTBroker {
     }
 
     public void publish(String topic, String message) throws UnsupportedEncodingException, MqttException {
+//  Todo: provide async message reply (maybe deploy echo example?)
 //        if (subscription.isComplete()) {
 //            final MqttMessage mqttMessage = new MqttMessage(message.getBytes());
 //            client.publish(topic, mqttMessage);
