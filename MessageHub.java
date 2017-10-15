@@ -18,8 +18,10 @@ package remotehub;
 
 import java.io.IOException;
 import java.time.LocalTime;
-import java.time.ZoneId;
+import java.util.Calendar;
 import java.util.Properties;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -45,20 +47,22 @@ public class MessageHub implements MqttCallback {
     private final MQTTBroker mqttBroker;
 
     private final SunRiseSet sun;
+    private final Timer blindsUpTimer = new Timer();
+    private final Timer blindsDownTimer = new Timer();
 
     private static final Integer GARAGE_DOOR_PULSE = 200;
-    private static final Integer JALOUSIE_TIME = 60000;
+    private static final Integer JALOUSIE_PULSE = 60000;
 
     public static void main(String[] args) {
 
         try {
             addFileLogger();
-            LOGGER.log(Level.INFO, "Remote Hub V 0.3");
-            LOGGER.setLevel(Level.FINEST);
+            LOGGER.info("Remote Hub V 0.3");
+            LOGGER.setLevel(Level.INFO);
 
             new MessageHub();
         } catch (MqttException | IOException | SecurityException ex) {
-            LOGGER.log(Level.SEVERE, ex.getMessage());
+            LOGGER.severe(ex.getMessage());
         }
     }
 
@@ -86,11 +90,11 @@ public class MessageHub implements MqttCallback {
         gpioBroker = new GpioBroker(relayProperties);
         mqttBroker = new MQTTBroker(this.getClass().getName(), this);
 
+        scheduleBlinds(blindsUpTimer, "Up");
+        scheduleBlinds(blindsDownTimer, "Down");
+
         while (true) {
-            final LocalTime now = LocalTime.now(ZoneId.of("Europe/Berlin"));
-            if (now.getHour() == 6 && now.getMinute() == 15) {
-                moveBlinds(true);
-            }
+
             try {
                 Thread.sleep(60000);
             } catch (InterruptedException ex) {
@@ -98,31 +102,49 @@ public class MessageHub implements MqttCallback {
                 break;
             }
         }
-
     }
 
-    private void moveBlinds(Boolean dayTime) {
-        //open/close all blinds
-        String direction = dayTime ? "Up" : "Down";
-        relayProperties.forEach((key, value) -> {
-            final String relais = value.toString().toLowerCase()
-                    .replace("/auf", "").replace("/ab", "");
-            if (relais.contains("/ro/")) {
-                final SwitchAction switchAction = new SwitchAction(relais, direction);
-                execute(switchAction);
+    private void scheduleBlinds(Timer timer, String direction) {
+        final LocalTime time = sun.getTime(direction);
+        final Calendar date = Calendar.getInstance();
+
+        date.set(Calendar.HOUR_OF_DAY, time.getHour());
+        date.set(Calendar.MINUTE, time.getMinute());
+        date.set(Calendar.SECOND, 0);
+        date.set(Calendar.MILLISECOND, 0);
+
+        LOGGER.info("schedule blinds for " + date.getTime());
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                moveBlinds(direction);
+                LOGGER.info("scheduled blinds " + direction);
             }
-        }
-        );
+        }, date.getTime(), 1000 * 60 * 60 * 24);
+    }
+
+    /* Direction can be 'Up', 'Down' or 'Stop' (case agnostic) */
+    private void moveBlinds(String direction) {
+        //open/close all blinds
+        relayProperties.forEach((key, value) -> {
+            final String relais = value.toString().trim().toLowerCase();
+            if (isRollerShutter(relais)
+                    && (relais.contains("kueche") || relais.contains("erker"))
+                    && relais.contains("/ab")) {
+                execute(new SwitchAction(relais.replace("/ab", ""), direction.toLowerCase()));
+                LOGGER.finer("moveBlinds: " + relais + direction);
+            }
+        });
     }
 
     @Override
     public void connectionLost(Throwable thrwbl) {
-        LOGGER.log(Level.WARNING, "connection lost: ".concat(thrwbl.getCause().toString()));
+        LOGGER.warning("connection lost: ".concat(thrwbl.getCause().toString()));
     }
 
     @Override
     public void messageArrived(String topic, MqttMessage mm) throws Exception {
-        LOGGER.log(Level.INFO, "Received message: ".concat(topic.concat(mm.toString())));
+        LOGGER.info("Received message: ".concat(topic.concat(mm.toString())));
         final SwitchAction action = eventMapper.map(topic, mm.toString());
         if (eventMapper.isSensorEvent(topic) && !mm.isRetained()) {
             // TODO publish new topic state for sensor events:
@@ -134,25 +156,27 @@ public class MessageHub implements MqttCallback {
     private void execute(SwitchAction action) {
         final String output = action.getOutput();
         final String command = action.getCommand();
-//        LOGGER.log(Level.INFO, "Mapped to message: ".concat(output.concat(command)));
+        LOGGER.log(Level.FINER, "Mapped to message: ".concat(output.concat(command)));
 
         if (isRollerShutter(output) || isGarageDoor(output)) {
-            if ("up".equalsIgnoreCase(command)) {
-                gpioBroker.set(output.concat("/ab"), false);
-                gpioBroker.pulse(output.concat("/auf"), getPulseTime(output));
-            } else if ("down".equalsIgnoreCase(command)) {
-                gpioBroker.set(output.concat("/auf"), false);
-                gpioBroker.pulse(output.concat("/ab"), getPulseTime(output));
-            } else {
-                gpioBroker.set(output.concat("/ab"), false);
-                gpioBroker.set(output.concat("/auf"), false);
+            switch (command) {
+                case "up":
+                    gpioBroker.set(output.concat("/ab"), false);
+                    gpioBroker.pulse(output.concat("/auf"), getPulseTime(output));
+                    break;
+                case "down":
+                    gpioBroker.set(output.concat("/auf"), false);
+                    gpioBroker.pulse(output.concat("/ab"), getPulseTime(output));
+                    break;
+                default:
+                    gpioBroker.set(output.concat("/ab"), false);
+                    gpioBroker.set(output.concat("/auf"), false);
+                    break;
             }
-        } else if (command.equalsIgnoreCase("FLUR_EG/D1")) {
-            gpioBroker.pulse("WCEG/Licht", 180000);
         } else if (isBinary(output)) {
-            if ("on".equalsIgnoreCase(command) || "true".equalsIgnoreCase(command)) {
+            if ("on".equals(command) || "true".equals(command)) {
                 gpioBroker.set(output, true);
-            } else if ("off".equalsIgnoreCase(command) || "false".equalsIgnoreCase(command)) {
+            } else if ("off".equals(command) || "false".equals(command)) {
                 gpioBroker.set(output, false);
             } else if (isButtonPress(command)) {
                 gpioBroker.toggle(output);
@@ -165,23 +189,20 @@ public class MessageHub implements MqttCallback {
                 }
             }
         } else {
-            LOGGER.log(Level.FINEST, "Unassigned message: ".concat(output.concat(command)));
+            LOGGER.finest("Unassigned message: ".concat(output.concat(command)));
         }
     }
 
     private Integer getPulseTime(final String output) {
-        if (isGarageDoor(output)) {
-            return GARAGE_DOOR_PULSE;
-        }
-        return JALOUSIE_TIME;
+        return (isGarageDoor(output) ? GARAGE_DOOR_PULSE : JALOUSIE_PULSE);
     }
 
     @Override
     public void deliveryComplete(IMqttDeliveryToken imdt) {
         try {
-            LOGGER.log(Level.FINEST, "Delivered message: ".concat(imdt.getMessage().toString()));
+            LOGGER.fine("Delivered message: ".concat(imdt.getMessage().toString()));
         } catch (MqttException ex) {
-            LOGGER.log(Level.SEVERE, null, ex);
+            LOGGER.severe(ex.getMessage());
         }
     }
 

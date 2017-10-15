@@ -26,12 +26,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Timer;
-import java.util.logging.Level;
-import static remotehub.MessageHub.LOGGER;
 
 /**
  *
@@ -45,7 +42,6 @@ public class GpioBroker {
     private final GpioPinDigitalOutput dataPin;
     private final List<GpioPinDigitalOutput> enablePins = new ArrayList<>();
 
-    private static final Map<RelayOutput, Boolean> STATES = new HashMap<>();
     private final List<Integer> wiredAddresses = Arrays.asList(7, 6, 5, 4, 2, 1);
     final int relaisPerEnable = wiredAddresses.size();
 
@@ -69,9 +65,11 @@ public class GpioBroker {
         // assign data pin
         dataPin = gpio.provisionDigitalOutputPin(GPIO_26, PinState.LOW);
         // assign Enable Pins
-        enablePinList.forEach(pin -> enablePins.add(gpio.provisionDigitalOutputPin(pin, PinState.HIGH)));
+        enablePinList.forEach(pin
+                -> enablePins.add(gpio.provisionDigitalOutputPin(pin, PinState.HIGH)));
 
-        relayProperties.forEach((key, value) -> assignRelayOutput(value.toString().trim().toLowerCase(), Integer.parseInt(key.toString())));
+        relayProperties.forEach((key, value)
+                -> assignRelayOutput(value.toString().trim().toLowerCase(), Integer.parseInt(key.toString())));
     }
 
     private void assignRelayOutput(String relayName, Integer order) {
@@ -79,15 +77,13 @@ public class GpioBroker {
         if (order % 30 >= 12) { // reverse order for lower banks
             wiredAddressNo = relaisPerEnable - 1 - wiredAddressNo;
         } // else normal order for upper banks
-        relays.add(createRelayOutput(relayName,
-                enablePins.get(order / relaisPerEnable),
+        relays.add(createRelayOutput(relayName, enablePins.get(order / relaisPerEnable),
                 wiredAddresses.get(wiredAddressNo)));
         relayTimers.put(relayName, new Timer());
     }
 
     private RelayOutput createRelayOutput(String name,
-            GpioPinDigitalOutput enablePin,
-            Integer latchAddress) {
+            GpioPinDigitalOutput enablePin, Integer latchAddress) {
         return new RelayOutput(name, enablePin, addressPinA, addressPinB,
                 addressPinC, dataPin, LatchAddress.getAddress(latchAddress));
     }
@@ -95,24 +91,19 @@ public class GpioBroker {
     synchronized void set(String relay, Boolean state) {
         getRelay(relay).ifPresent(ro -> ro.setState(state));
 
-        if ("test".equalsIgnoreCase(relay)) {
-            reapplySet();
-        }
         if ("alle Lichter".equalsIgnoreCase(relay)) {
             relays.stream()
-                    .filter(r -> r.name.contains("icht"))
+                    .filter(r -> r.name.toLowerCase().contains("licht"))
                     .forEach(r -> r.setState(state));
         }
     }
 
-    // TODO test if new pulse works with multiple timers active at once!
     void pulse(String relay, Integer timeInMs) {
-        getRelay(relay)
-                .ifPresent(ro -> {
-                    ro.setState(Boolean.TRUE);
-                    // get timer from relay
-                    relayTimers.get(relay).schedule(new SwitchTask(this, relay), timeInMs);
-                });
+        getRelay(relay).ifPresent(ro -> {
+            ro.setState(Boolean.TRUE);
+            // get timer from relay
+            relayTimers.get(relay).schedule(new SwitchTask(this, relay), timeInMs);
+        });
     }
 
     private Optional<RelayOutput> getRelay(String relay) {
@@ -123,11 +114,5 @@ public class GpioBroker {
 
     synchronized void toggle(String relay) {
         getRelay(relay).ifPresent(ro -> ro.setState(!ro.getState()));
-    }
-
-    void reapplySet() {
-        // execute all value set from hash set again
-        LOGGER.log(Level.WARNING, "ToDo: Fix the dirty reapplySet workaround!\n");
-        relays.stream().forEach(ro -> ro.setState(ro.getState()));
     }
 }

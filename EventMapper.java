@@ -64,7 +64,7 @@ public class EventMapper {
         } else if (output.endsWith("auf")) {
             return "up";
         }
-        return message;
+        return message.toLowerCase();
     }
 
     private String determineOutput(String topic) {

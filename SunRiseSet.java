@@ -42,7 +42,7 @@ public class SunRiseSet {
         if (upDown.equalsIgnoreCase("up") || upDown.equalsIgnoreCase("rise")) {
             eventTime = zenith - zeitdifferenz();
         } else {
-            eventTime = zenith + zeitdifferenz();
+            eventTime = zenith + zeitdifferenz() + 0.5;
         }
 
         int hour = (int) Math.floor(eventTime);
