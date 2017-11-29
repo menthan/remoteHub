@@ -30,15 +30,17 @@ public class EventMapper {
     private static final Map<String, String> SENSOR_MAP = new HashMap<>();
 
     public EventMapper(final Properties sensorProperties) {
-        sensorProperties.forEach((k, v) -> assignSensors(k.toString(), v.toString()));
-        sensorProperties.forEach((k, v) -> assignEvents(k.toString(), v.toString()));
+        sensorProperties.forEach((k, v) -> assignSensors(k.toString().trim().toLowerCase(), v.toString().trim().toLowerCase()));
+        sensorProperties.forEach((k, v) -> assignEvents(k.toString().trim().toLowerCase(), v.toString().trim().toLowerCase()));
     }
 
     SwitchAction map(String topic, String message) {
-        if (isSensorEvent(topic)) {
-            return new SwitchAction(determineOutput(topic), determineCommand(topic, message));
+        final String topicLow = topic.toLowerCase();
+        final String messageLow = message.toLowerCase();
+        if (isSensorEvent(topicLow)) {
+            return new SwitchAction(determineOutput(topicLow), determineCommand(topicLow, messageLow));
         }
-        return new SwitchAction(topic.toLowerCase(), message.toLowerCase());
+        return new SwitchAction(topicLow, messageLow);
     }
 
     private static void assignSensors(String key, String value) {
