@@ -1,3 +1,5 @@
+package remotehub;
+
 /*
  * Copyright (C) 2017 menthan
  *
@@ -14,19 +16,16 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-package remotehub;
+
 
 import java.util.TimerTask;
+import remotehub.GpioBroker;
 
 /**
  *
  * @author menthan
  */
-public class Tasks {
-
-}
-
-class SwitchTask extends TimerTask {
+public class SwitchTask extends TimerTask {
 
     private final String relay;
     private final GpioBroker broker;
@@ -38,6 +37,7 @@ class SwitchTask extends TimerTask {
 
     @Override
     public void run() {
+        System.out.println("setting " + relay + " false");
         broker.set(relay, Boolean.FALSE);
     }
 

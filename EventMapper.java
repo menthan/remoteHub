@@ -79,7 +79,7 @@ public class EventMapper {
     }
 
     boolean isSensorEvent(final String topic) {
-        return EVENT_MAP.containsKey(topic);
+        return EVENT_MAP.containsKey(topic.toLowerCase());
     }
 
 }

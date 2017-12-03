@@ -88,12 +88,16 @@ public class GpioBroker {
                 addressPinC, dataPin, LatchAddress.getAddress(latchAddress));
     }
 
-    synchronized void set(String relay, Boolean state) {
+    public synchronized void set(String relay, Boolean state) {
         getRelay(relay).ifPresent(ro -> ro.setState(state));
 
         if ("alle Lichter".equalsIgnoreCase(relay)) {
             relays.stream()
                     .filter(r -> r.name.toLowerCase().contains("licht"))
+                    .forEach(r -> r.setState(state));
+        } else if ("reaply".equalsIgnoreCase(relay)) {
+            relays.stream()
+                    .filter(r -> state.equals(r.getState()))
                     .forEach(r -> r.setState(state));
         }
     }
@@ -102,7 +106,7 @@ public class GpioBroker {
         getRelay(relay).ifPresent(ro -> {
             ro.setState(Boolean.TRUE);
             // get timer from relay
-            relayTimers.get(relay).schedule(new SwitchTask(this, relay), timeInMs);
+            relayTimers.get(relay.toLowerCase()).schedule(new SwitchTask(this, relay), timeInMs);
         });
     }
 

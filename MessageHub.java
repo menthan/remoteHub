@@ -92,7 +92,6 @@ public class MessageHub implements MqttCallback {
 
         scheduleBlinds(blindsUpTimer, "Up");
         scheduleBlinds(blindsDownTimer, "Down");
-
         while (true) {
 
             try {
@@ -114,8 +113,13 @@ public class MessageHub implements MqttCallback {
             date.set(Calendar.HOUR_OF_DAY, 7);
             date.set(Calendar.MINUTE, 0);
         } else { // shut blinds one hour after sunset
-            date.set(Calendar.HOUR_OF_DAY, time.plusHours(1).getHour());
-            date.set(Calendar.MINUTE, time.plusHours(1).getMinute());
+            date.set(Calendar.HOUR_OF_DAY, 17);
+            date.set(Calendar.MINUTE, 30);
+//            date.set(Calendar.HOUR_OF_DAY, time.plusHours(1).getHour());
+//            date.set(Calendar.MINUTE, time.plusHours(1).getMinute());
+        }
+        if (date.before(Calendar.getInstance())) {
+            date.set(Calendar.DAY_OF_YEAR, date.get(Calendar.DAY_OF_YEAR) + 1);
         }
 
         LOGGER.info("schedule blinds " + direction + " for " + date.getTime());
@@ -151,6 +155,7 @@ public class MessageHub implements MqttCallback {
     public void messageArrived(String topic, MqttMessage mm) throws Exception {
         LOGGER.info("Received message: ".concat(topic.concat(mm.toString())));
         final SwitchAction action = eventMapper.map(topic, mm.toString());
+        System.out.println(topic + " event" + eventMapper.isSensorEvent(topic));
         if (eventMapper.isSensorEvent(topic) && !mm.isRetained()) {
             // TODO publish new topic state for sensor events:
             mqttBroker.publish(action.getOutput(), action.getCommand());
@@ -179,7 +184,7 @@ public class MessageHub implements MqttCallback {
                     break;
             }
             if (isGarageDoor(output)) {
-                gpioBroker.pulse("Garage/Licht", 300000);
+                gpioBroker.pulse("garage/licht", 300000);
             }
         } else if (isBinary(output)) {
             if ("on".equals(command) || "true".equals(command)) {
@@ -189,12 +194,14 @@ public class MessageHub implements MqttCallback {
             } else if (isButtonPress(command)) {
                 gpioBroker.toggle(output);
             } else // command is "low" or "high"
-             if (output.contains("licht")
+            {
+                if (output.contains("licht")
                         && (output.contains("eg") || output.contains("og"))) {
                     gpioBroker.set(output, !sun.dayTime() && "high".equals(command));
                 } else {
                     gpioBroker.set(output, "high".equals(command));
                 }
+            }
         } else {
             LOGGER.finest("Unassigned message: ".concat(output.concat(command)));
         }
